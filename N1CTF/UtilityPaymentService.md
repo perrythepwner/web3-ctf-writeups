@@ -5,14 +5,16 @@ description: WEB3 | 453 pts - 13 solves
 ## Utility Payment Service
 
 >Description: Utility payment service. Deposit into your escrow account and make payments from the escrow. I was told it's a magic account. https://drive.google.com/file/d/1YVrLoB9V4K5BpVSBeVOL6W9dObQ71fEF/view?usp=sharing. 
->nc 43.154.34.214 8001
+>nc 43.154.34.214 8001  
+> Author: @Q7
 
-The contract was a simple Escrow Service that allows you to make payments. The challenge was divided into two components: server and solve folders. inside the first dir we had the entire source code of the contract, in the `solve` dir there was everything necessary to run the exploit.
-Inside `solve/src` the exploit had to be written in rust, then we have to run `python solve.py` which will compile our contract exploit and send it to the chall server.
+The contract was a simple Escrow Service that allows you to make payments. The challenge was divided into three components: program, server and solve folders. Inside the first dir we had the entire source code of the contract, in the `solve` dir there was everything necessary to run the exploit.
+Inside `solve/src` the exploit has to be written in Rust, then we have to run `python solve.py` which will compile our contract exploit and send it to the chall server.
 Moving on to the challenge analysis, we had 3 main functions available: 
 - Deposit to escrow 
 - Withdraw all balance in escrow 
-- Pay utility service fees. 
+- Pay utility service fees.
+
 What caught my attention was the `amount: u16`  parameter in the `deposit_escrow()` and `pay_utility_fees()` functions while our balance in initialization was defined as `u64`:
 
 program/src/processor.rs:
@@ -42,14 +44,14 @@ const INIT_BAL: u64 = 50;
 const RESERVE_BAL: u64 = 1_000_000;
 ``` 
 
-Clearly something was off. Looking for integer undeflow/overflow for Solana smart contracts written in rust, I discovered that, in optimization mode, Rust doesn't make any checks:
+Clearly something was off. Looking for Rust integer undeflow/overflow in Solana smart contracts, I discovered that, in optimization mode, Rust doesn't make any checks:
 
 >In debug mode, Rust adds built-in checks for overflow/underflow and panics when an overflow/underflow occurs at runtime. However, in release (or optimization) mode, Rust **silently ignores** this behavior by default and computes _two’s complement wrapping (e.g., 255+1 becomes 0 for_ an `u8` integer).
 
 So if you want to do certain subtractions securely you should do it with `checked_sub()`  func or by turning on the `overflow-checks` in release mode by setting `overflow-checks = true` under `[profile.release]`. 
 Note that actually, checks are made in `pay_utility_fees()` : if `amount > 15`, it makes sure that there's enough balance in escrow. However we can easily bypass that by calling multiple times the function with `amount < 15`.
 
-Exploit scenario:
+### Exploit scenario:
 1) Perry deposit 10 lamports out of 50 (init balance) to escrow account.
 2) Now Perry has 40 lamports on balance and 10 lamports in escrow account.
 3) Perry calls `pay_utility_fees()` with `amount = 10` that deducts the tokens from the escrow account. Balance is = 0 now. Calling the function again, balance will underflow by -10, which will be converted to ~65526 lamports.
@@ -57,7 +59,7 @@ Exploit scenario:
 5) We have successfully exploited the contract as we now have Balance > Target amount (60k lamports).
 6) Catch the flag!
 
-PoC:
+### PoC:  
 solve/src/processor.rs:
 ```rust
 use borsh::BorshSerialize;
